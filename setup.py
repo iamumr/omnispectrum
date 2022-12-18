@@ -4,17 +4,20 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='OmniSpectrum',
-    version = 0.2,
+    name='omnispectrum',
+    version = 0.7,
     description=(
         '全向地震动反应谱生成程序'
     ),
     long_description=open('README.md', encoding = 'utf-8').read(),
+    long_description_content_type="text/markdown",
     author = 'Guochang Li',
     author_email = 'liguochangli@gmail.com',
     url = 'http://umr.ink',
     license = 'Apache 3.0',
     packages = ['omnispectrum'],
+    include_package_data=True,
+    package_data={'omnispectrum':['*.csv']},
     platforms = ["all"],
     install_requires = [
         'pandas',

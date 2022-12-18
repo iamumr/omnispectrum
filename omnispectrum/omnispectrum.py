@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
+import scipy.linalg as la
 import pandas as pd
 import time
 import multiprocessing
@@ -58,7 +59,6 @@ class spectrum:
             A = np.vstack([self.x**0, self.x**1, self.x**2])
             sol, r, rank, s = la.lstsq(A.T, self.acc)
             y_fit = sol[0] + sol[1] * self.x + sol[2] * self.x**2
-            print(len(y_fit))
             self.acc = self.acc - y_fit
 
         return
@@ -212,7 +212,7 @@ class spectrum:
         return f, Four
 
 #作图部分
-def graph(e , n, u, method='a'):
+def graph(e , n, u, name, method='a'):
     plt.rcParams['font.family'] = ['sans-serif']
     plt.rcParams['font.sans-serif'] = ['SimHei']
     plt.rcParams['axes.unicode_minus']=False # 用来正常显示负号
@@ -224,8 +224,10 @@ def graph(e , n, u, method='a'):
     if method == 'a':
         plt.plot(t,e.acc,label=e.id+" EW PGA="+str(e.get_PGA()))
     elif method == 'v':
+        e.get_v()
         plt.plot(t,e.vel,label=e.id+" EW PGV="+str(e.get_PGV()))
     elif method == 'd':
+        e.get_u()
         plt.plot(t,e.dis,label=e.id+" EW PGD="+str(e.get_PGD()))
     plt.legend()
 
@@ -234,8 +236,10 @@ def graph(e , n, u, method='a'):
     if method == 'a':
         plt.plot(t, n.acc,label=n.id+" NS PGA="+str(n.get_PGA()))
     elif method == 'v':
+        n.get_v()
         plt.plot(t, n.vel,label=e.id+" EW PGV="+str(n.get_PGV()))
     elif method == 'd':
+        n.get_u()
         plt.plot(t, n.dis,label=e.id+" EW PGD="+str(n.get_PGD()))
     plt.legend()
 
@@ -244,21 +248,23 @@ def graph(e , n, u, method='a'):
     if method == 'a':
         plt.plot(t, u.acc,label=n.id+" UD PGA="+str(u.get_PGA()))
     elif method == 'v':
+        u.get_v()
         plt.plot(t, u.vel,label=e.id+" UD PGV="+str(u.get_PGV()))
     elif method == 'd':
+        u.get_u()
         plt.plot(t, u.dis,label=e.id+" UD PGD="+str(u.get_PGD()))
     plt.legend()
 
-    plt.savefig('{}.jpg'.format(method))
+    plt.savefig(name)
     
-def fyp(e,n,u, method = 'a', standard: str = None):
+def fyp(e,n,u, name, method = 'a', standard: str = None):
     plt.rcParams['font.family'] = ['sans-serif']
     plt.rcParams['font.sans-serif'] = ['SimHei']
     plt.rcParams['axes.unicode_minus']=False # 用来正常显示负号
     plt.figure(figsize=(10,5))
     if method == 'a':
         if standard is not None:
-            com=pd.read_csv(standard, header=None)    
+            com=pd.read_csv(standard)    
             plt.plot(com.iloc[:,0],com.iloc[:,1],label="6度罕遇",linestyle="-")
             m=max(max(e.sa),max(n.sa),max(u.sa))/980
             print(m)
@@ -288,9 +294,9 @@ def fyp(e,n,u, method = 'a', standard: str = None):
         plt.ylabel("位移反应谱(cm)")
     plt.legend()
     plt.xlim(0,4)
-    plt.savefig("fyp_{}.jpg".format(method))
+    plt.savefig(name)
     
-def fourht(e,n,u):
+def fourht(e, n, u, name):
     plt.rcParams['font.family'] = ['sans-serif']
     plt.rcParams['font.sans-serif'] = ['SimHei']
     plt.rcParams['axes.unicode_minus']=False # 用来正常显示负号
@@ -313,27 +319,27 @@ def fourht(e,n,u):
     plt.xlabel("频率(Hz)")
     plt.ylabel("幅值谱(cm/s)")
     
-    plt.savefig("fourht.jpg")
+    plt.savefig(name)
     return
     
 class OmniSpectrum():
 
-    def __init__(self, path: str, process: int = 4, period: int = 2):  # 路径
+    def __init__(self, path: str = None, process: int = 4, period: int = 2, baseline_correction: bool = False, pool=None):  # 路径
         self.period = period
         self.process = process
-        self.pool = multiprocessing.Pool(process, maxtasksperchild=1)
+        self.pool = pool
+        self.baseline_correction = baseline_correction
         self.space_theta = np.radians(np.linspace(0, 360, 361))  # 转化为弧度
         self.space_r = np.linspace(0, self.period, self.period*10 + 1)
         self.r, self.theta = np.meshgrid(self.space_r, self.space_theta)
-        self.value_a = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 数值矩阵 加速度
-        self.value_v = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 速度
-        self.value_u = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 位移
-        self.value_a = multiprocessing.Manager().list(self.value_a)
-        self.value_v = multiprocessing.Manager().list(self.value_v)
-        self.value_u = multiprocessing.Manager().list(self.value_u)
+        self.sa = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 数值矩阵 加速度
+        self.sv = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 速度
+        self.su = np.zeros(len(self.space_theta) * len(self.space_r)).reshape(len(self.space_theta), len(self.space_r))  # 位移
+        self.sa = multiprocessing.Manager().list(self.sa)
+        self.sv = multiprocessing.Manager().list(self.sv)
+        self.su = multiprocessing.Manager().list(self.su)
         self.path = path
-        self.ew, self.ns, self.up, self.t = self.input_gmotion(path, mode = 1)
-        pass
+        if path is not None: self.ew, self.ns, self.up, self.t = self.input_gmotion(path, mode = 1)
         
     def input_gmotion(self, path=None, ew=None, ns=None, up=None, mode: int = 1):  # 返回EW，NW,UP方向地震动数组和时间间隔t
         '''
@@ -376,13 +382,13 @@ class OmniSpectrum():
 
     def get_single(self, direction):
         if direction == 'ew':
-            return spectrum(self.ew, self.t)
+            return spectrum(self.ew, self.t, baseline_correction = self.baseline_correction)
         elif direction == 'ns':
-            return spectrum(self.ns, self.t)
+            return spectrum(self.ns, self.t, baseline_correction = self.baseline_correction)
         elif direction == 'up':
-            return spectrum(self.up, self.t)
+            return spectrum(self.up, self.t, baseline_correction = self.baseline_correction)
         elif isinstance(direction, int):
-            return spectrum(self.any_angle(self.ew, self.ns, np.radians(direction)), self.t)
+            return spectrum(self.any_angle(self.ew, self.ns, np.radians(direction)), self.t, baseline_correction = self.baseline_correction)
         
     def any_angle(self, ew, ns, theta):  # EW,NS地震动,方向角，作用：返回任何方向的地震动
         return np.array(ew) * np.cos(theta) + np.array(ns) * np.sin(theta)
@@ -393,8 +399,7 @@ class OmniSpectrum():
         plt.colorbar(contourplot, shrink=.6, pad=0.08)
         plt.savefig(name)
 
-    @staticmethod
-    def spect(acc, t, period, direction, sa, sv, su):
+    def spect(self, direction):
         '''
 
         :param ew:
@@ -403,33 +408,31 @@ class OmniSpectrum():
         :return:
         '''
         # print(direction)
-        sp = spectrum(acc, t)
-        sp.get_sa(0, period + 0.1, 0.1)
-        sa[direction] = sp.sa_truemax
-        sa[direction + 180] = abs(sp.sa_truemin)
-        sv[direction] = sp.sv_truemax
-        sv[direction + 180] = abs(sp.sv_truemin)
-        su[direction] = sp.sd_truemax
-        su[direction + 180] = abs(sp.sd_truemin)
+        new_a = self.any_angle(self.ew, self.ns, np.radians(direction))
+        sp = self.get_single(direction)
+        sp.get_sa(0, self.period + 0.1, 0.1)
+        self.sa[direction] = sp.sa_truemax
+        self.sa[direction + 180] = abs(sp.sa_truemin)
+        self.sv[direction] = sp.sv_truemax
+        self.sv[direction + 180] = abs(sp.sv_truemin)
+        self.su[direction] = sp.sd_truemax
+        self.su[direction + 180] = abs(sp.sd_truemin)
         # print('{}方向结束'.format(direction))
         return
 
     def any_angle_spectrum(self):
-#         ew, ns, up, t = self.input_gmotion(path)
         if (not os.path.exists(self.path.split('.')[-2] + '_a.jpg')):
-#             pool = multiprocessing.Pool(self.process, maxtasksperchild=1)
             for i in tqdm(range(0, 181)):
-                new_a = self.any_angle(self.ew, self.ns, np.radians(i))
-                OmniSpectrum.spect(new_a, self.t, self.period, i, self.value_a, self.value_v, self.value_u)
+                self.spect(i)
 #                 self.pool.apply_async(OmniSpectrum.spect, (new_a, t, self.period, i, self.value_a, self.value_v, self.value_u,), error_callback=errprint)
 #             self.pool.close()
 #             self.pool.join()
-            self.graph(self.theta, self.r, self.value_a, self.path.split('.')[-2] + '_a.jpg')
-            self.graph(self.theta, self.r, self.value_v, self.path.split('.')[-2] + '_v.jpg')
-            self.graph(self.theta, self.r, self.value_u, self.path.split('.')[-2] + '_u.jpg')
-            print("处理{}".format(path))
+            self.graph(self.theta, self.r, self.sa, self.path.split('.')[-2] + '_a.jpg')
+            self.graph(self.theta, self.r, self.sv, self.path.split('.')[-2] + '_v.jpg')
+            self.graph(self.theta, self.r, self.su, self.path.split('.')[-2] + '_u.jpg')
+            print("处理{}".format(self.path))
         else:
-            print("跳过{}".format(path))
+            print("跳过{}".format(self.path))
         return
 
 class convert2csv():
@@ -475,55 +478,46 @@ class convert2csv():
         else:
             print('{}模式不存在'.format(mode))
 
-if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        parser = argparse.ArgumentParser(description='全方位反应谱生成程序')
-        parser.add_argument('-i', '--input', type=str, help='输入文件路径', default=None)
-        parser.add_argument('-o', '--output', type=str, help='输出文件路径', default=None)
-        parser.add_argument('--thread', type=int, help='进程数', default=4)
-        args = parser.parse_args()
-    else:
-        print('参数有误，--help查看帮助文档')
-
-    assert args.input is not None, '输入路径为空！请使用--help指令查看帮助'
-    path = args.input
-    output = args.output if args.output is not None else args.input
+def csv2docx(path, output, baseline_correction: bool = False, standard:str=os.path.join(os.path.dirname(__file__), 'standard.csv'), pool=None):
     doc=Document()
     for root,dirs,files in os.walk(path):
         for file in files:
             if file.split('.')[-1] == 'csv':
                 print('{} start'.format(file))
-                omni = OmniSpectrum(os.path.join(path,file))
-                e = omni.get_single('ew')
-                n = omni.get_single('ns')
-                u = omni.get_single('up')
-                e.get_u()
-                n.get_u()
-                u.get_u()
-                e.get_sa(0,4,0.1)
-                n.get_sa(0,4,0.1)
-                u.get_sa(0,4,0.1)
-                graph(e, n, u, method='a')
-                graph(e, n, u, method='v')
-                graph(e, n, u, method='d')
-                fyp(e, n, u, method='a')
-                fyp(e, n, u, method='v')
-                fyp(e, n, u, method='d')
-                fourht(e, n, u)
-                omni.any_angle_spectrum()
-
+                if (not os.path.exists(os.path.join(path, file).split('.')[-2] + '_acc.jpg')):
+                    omni = OmniSpectrum(os.path.join(path, file), baseline_correction=baseline_correction)
+                    e = omni.get_single('ew')
+                    n = omni.get_single('ns')
+                    u = omni.get_single('up')
+                    e.get_u()
+                    n.get_u()
+                    u.get_u()
+                    e.get_sa(0, 4, 0.1)
+                    n.get_sa(0, 4, 0.1)
+                    u.get_sa(0, 4, 0.1)
+                    graph(e, n, u, os.path.join(path,file).split('.')[-2] + '_acc.jpg', method='a')
+                    graph(e, n, u, os.path.join(path,file).split('.')[-2] + '_vel.jpg', method='v')
+                    graph(e, n, u, os.path.join(path,file).split('.')[-2] + '_dis.jpg', method='d')
+                    fyp(e, n, u, os.path.join(path,file).split('.')[-2] + '_sa.jpg', method='a', standard=standard)
+                    fyp(e, n, u, os.path.join(path,file).split('.')[-2] + '_sv.jpg', method='v')
+                    fyp(e, n, u, os.path.join(path,file).split('.')[-2] + '_sd.jpg', method='d')
+                    fourht(e, n, u, os.path.join(path,file).split('.')[-2] + '_fourht.jpg')
+                    omni.any_angle_spectrum()
+                # word添加标题
+                p = doc.add_paragraph(file.split('.')[0])
+                p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 tab =doc.add_table(rows=7,cols=2)
 
                 miaoshu=["加速度时程曲线","速度时程曲线","位移时程曲线","加速度反应谱","速度反应谱","位移反应谱","傅里叶幅值谱","加速度全方位反应谱","速度全方位反应谱","位移全方位反应谱"]
                 height=[7,7,6.38,5.2,5.2,5.2,5.2,6.68,6.68,6.68,6.68]
                 pic_name = {
-                    0 : 'a.jpg',
-                    1 : 'v.jpg',
-                    2 : 'd.jpg',
-                    3 : 'fyp_a.jpg',
-                    4 : 'fyp_v.jpg',
-                    5 : 'fyp_d.jpg',
-                    6 : 'fourht.jpg',
+                    0 : os.path.join(path,file).split('.')[-2] + '_acc.jpg',
+                    1 : os.path.join(path,file).split('.')[-2] + '_vel.jpg',
+                    2 : os.path.join(path,file).split('.')[-2] + '_dis.jpg',
+                    3 : os.path.join(path,file).split('.')[-2] + '_sa.jpg',
+                    4 : os.path.join(path,file).split('.')[-2] + '_sv.jpg',
+                    5 : os.path.join(path,file).split('.')[-2] + '_sd.jpg',
+                    6 : os.path.join(path,file).split('.')[-2] + '_fourht.jpg',
                     7 : os.path.join(path,file).split('.')[-2] + '_a.jpg',
                     8 : os.path.join(path,file).split('.')[-2] + '_v.jpg',
                     9 : os.path.join(path,file).split('.')[-2] + '_u.jpg'
@@ -550,3 +544,20 @@ if __name__ == '__main__':
                         cell_new.paragraphs[1].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 doc.add_page_break()
     doc.save(os.path.join(output, 'specturm.docx'))
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description='全方位反应谱生成程序')
+        parser.add_argument('-i', '--input', type=str, help='输入文件路径', default=None)
+        parser.add_argument('-o', '--output', type=str, help='输出文件路径', default=None)
+        parser.add_argument('--baseline', action='store_true', help='基线修正', default=None)
+        parser.add_argument('--thread', type=int, help='进程数', default=4)
+        args = parser.parse_args()
+    else:
+        print('参数有误，--help查看帮助文档')
+
+    assert args.input is not None, '输入路径为空！请使用--help指令查看帮助'
+    path = args.input
+    output = args.output if args.output is not None else args.input
+    pool = multiprocessing.Pool(args.thread, maxtasksperchild=1)
+    csv2docx(path, output, baseline_correction=args.baseline)
